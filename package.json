@@ -3,11 +3,11 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
+    "clean": "hardhat clean",
     "build": "hardhat compile",
-    "test": "hardhat test",
-    "lint:ts": "eslint . --ext .ts",
-    "lint:sol": "solhint 'contracts/**/*.sol'",
-    "format": "prettier --write ."
+    "test": "hardhat test -v",
+    "test:ts": "mocha test/**/*.test.ts --require tsx/cjs --timeout 30000",
+    "test:viem": "tsx test/working-example.ts"
   },
   "keywords": [],
   "author": "",
@@ -15,7 +15,8 @@
   "description": "",
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.2",
-    "@nomicfoundation/hardhat-toolbox-mocha-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-mocha": "^3.0.2",
+    "@nomicfoundation/hardhat-viem": "^3.0.0",
     "@types/chai": "^4.3.20",
     "@types/chai-as-promised": "^8.0.2",
     "@types/mocha": "^10.0.10",
@@ -25,16 +26,17 @@
     "chai": "^5.3.3",
     "dotenv": "^17.2.2",
     "eslint": "^8.57.1",
-    "ethers": "^6.15.0",
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
-    "hardhat": "^3.0.4",
-    "mocha": "^11.7.2",
+    "hardhat": "^3.0.6",
+    "mocha": "^10.8.2",
     "prettier": "^3.6.2",
     "prettier-plugin-solidity": "^1.4.3",
     "solhint": "^6.0.1",
     "solhint-plugin-prettier": "^0.1.0",
     "ts-node": "^10.9.2",
-    "typescript": "~5.8.0"
+    "tsx": "^4.20.5",
+    "typescript": "~5.8.0",
+    "viem": "^2.37.5"
   },
   "type": "module",
   "dependencies": {

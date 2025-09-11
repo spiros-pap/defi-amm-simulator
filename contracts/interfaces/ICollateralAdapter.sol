@@ -5,13 +5,12 @@ interface ICollateralAdapter {
     function asset() external view returns (address);
     function decimals() external view returns (uint8);
 
-    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
-    function withdraw(
-        uint256 shares,
-        address receiver,
-        address owner
-    ) external returns (uint256 assets);
+    /// Pull `assets` from `from` and credit shares to `receiver`.
+    function depositFrom(address from, uint256 assets, address receiver) external returns (uint256 shares);
 
-    /// @notice Value of `shares` in underlying assets (or 1e18 scale if rebasing)
+    /// Burn `shares` and send assets to `receiver`. `owner` provides shares.
+    function withdraw(uint256 shares, address receiver, address owner) external returns (uint256 assets);
+
+    /// Value of `shares` in underlying assets.
     function valueOf(uint256 shares) external view returns (uint256 assets);
 }

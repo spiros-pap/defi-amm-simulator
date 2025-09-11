@@ -1,36 +1,34 @@
-import { expect } from 'chai';
-import { network } from 'hardhat';
+import { expect } from "chai";
+import viem from "hardhat";
 
-const { ethers } = await network.connect();
+describe("Counter", () => {
+  it("increments and emits", async () => {
+    const [admin, user] = await viem.getWalletClients();
+    const [deployer] = await viem.getWalletClients();
 
-describe('Counter', function () {
-  it('Should emit the Increment event when calling the inc() function', async function () {
-    const counter = await ethers.deployContract('Counter');
+    // deploy with viem
+    const { address } = await viem.deployContract("Counter");
+    const Counter = await viem.getContractAt("Counter", address);
 
-    await expect(counter.inc()).to.emit(counter, 'Increment').withArgs(1n);
+    // call inc()
+    await Counter.write.inc([], { account: deployer.account });
+
+    // verify state
+    const x = await Counter.read.x();
+    expect(x).to.equal(1n);
   });
 
-  it('The sum of the Increment events should match the current value', async function () {
-    const counter = await ethers.deployContract('Counter');
-    const deploymentBlockNumber = await ethers.provider.getBlockNumber();
+  it("sum of increments matches value", async () => {
+    const [deployer] = await viem.getWalletClients();
 
-    // run a series of increments
-    for (let i = 1; i <= 10; i++) {
-      await counter.incBy(i);
+    const { address } = await viem.deployContract("Counter");
+    const Counter = await viem.getContractAt("Counter", address);
+
+    for (let i = 1n; i <= 10n; i++) {
+      await Counter.write.incBy([i], { account: deployer.account });
     }
 
-    const events = await counter.queryFilter(
-      counter.filters.Increment(),
-      deploymentBlockNumber,
-      'latest',
-    );
-
-    // check that the aggregated events match the current value
-    let total = 0n;
-    for (const event of events) {
-      total += event.args.by;
-    }
-
-    expect(await counter.x()).to.equal(total);
+    const x = await Counter.read.x();
+    expect(x).to.equal(55n);
   });
 });
