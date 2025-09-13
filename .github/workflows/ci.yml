@@ -1,0 +1,426 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ main, staging, develop ]
+  pull_request:
+    branches: [ main, staging ]
+
+env:
+  NODE_VERSION: '18'
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  lint:
+    name: Code Linting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript linting
+        run: npm run lint
+
+      - name: Check TypeScript compilation
+        run: npm run typecheck
+
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run npm audit
+        run: npm audit --audit-level moderate
+
+      - name: Run Slither analysis
+        uses: crytic/slither-action@v0.3.0
+        id: slither
+        with:
+          target: 'contracts/'
+          slither-args: '--filter-paths node_modules'
+          fail-on: none
+
+      - name: Upload Slither results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: ${{ steps.slither.outputs.sarif }}
+
+  compile:
+    name: Contract Compilation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile contracts
+        run: npm run compile
+
+      - name: Check contract sizes
+        run: npm run size-contracts
+
+      - name: Upload compilation artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: compilation-artifacts
+          path: |
+            artifacts/
+            cache/
+            typechain-types/
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: compile
+    strategy:
+      matrix:
+        test-group: [
+          "adapters",
+          "oracle", 
+          "vault",
+          "liquidation",
+          "security"
+        ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download compilation artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: compilation-artifacts
+
+      - name: Run unit tests - ${{ matrix.test-group }}
+        run: npm run test:${{ matrix.test-group }}
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.test-group }}
+          path: test-results/
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+      - name: Run full system simulation
+        run: npm run simulate
+
+      - name: Upload integration results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: integration-results
+          path: |
+            test-results/
+            coverage/
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    needs: compile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download compilation artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: compilation-artifacts
+
+      - name: Run tests with coverage
+        run: npm run coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./coverage/lcov.info
+          flags: smart-contracts
+          name: smart-contracts-coverage
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage-report
+          path: coverage/
+
+  gas-analysis:
+    name: Gas Usage Analysis
+    runs-on: ubuntu-latest
+    needs: compile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download compilation artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: compilation-artifacts
+
+      - name: Run gas benchmarks
+        run: npm run test:gas
+
+      - name: Comment gas report on PR
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const gasReport = fs.readFileSync('gas-report.txt', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ⛽ Gas Usage Report\n\`\`\`\n${gasReport}\n\`\`\``
+            });
+
+      - name: Upload gas report
+        uses: actions/upload-artifact@v3
+        with:
+          name: gas-report
+          path: gas-report.txt
+
+  deployment-test:
+    name: Deployment Simulation
+    runs-on: ubuntu-latest
+    needs: [unit-tests, integration-tests]
+    strategy:
+      matrix:
+        network: [hardhat, localhost]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start local network
+        if: matrix.network == 'localhost'
+        run: |
+          npm run node &
+          sleep 10
+
+      - name: Test deployment on ${{ matrix.network }}
+        run: |
+          npm run deploy:${{ matrix.network }}
+          npm run verify-deployment:${{ matrix.network }}
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: deployment-${{ matrix.network }}
+          path: deployments/${{ matrix.network }}/
+
+  security-analysis:
+    name: Advanced Security Analysis
+    runs-on: ubuntu-latest
+    needs: compile
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security tests
+        run: npm run test:security
+
+      - name: Run access control tests  
+        run: npm run test:access-control
+
+      - name: Run reentrancy tests
+        run: npm run test:reentrancy
+
+      - name: Generate security report
+        run: npm run security-report
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v3
+        with:
+          name: security-analysis
+          path: security-report/
+
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [
+      lint,
+      security-audit,
+      unit-tests,
+      integration-tests,
+      coverage,
+      gas-analysis,
+      deployment-test,
+      security-analysis
+    ]
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Generate build summary
+        run: |
+          echo "# 🏗️ Build Summary" > build-summary.md
+          echo "" >> build-summary.md
+          echo "## Test Results" >> build-summary.md
+          echo "- Linting: ${{ needs.lint.result }}" >> build-summary.md
+          echo "- Security Audit: ${{ needs.security-audit.result }}" >> build-summary.md
+          echo "- Unit Tests: ${{ needs.unit-tests.result }}" >> build-summary.md
+          echo "- Integration Tests: ${{ needs.integration-tests.result }}" >> build-summary.md
+          echo "- Coverage: ${{ needs.coverage.result }}" >> build-summary.md
+          echo "- Gas Analysis: ${{ needs.gas-analysis.result }}" >> build-summary.md
+          echo "- Deployment: ${{ needs.deployment-test.result }}" >> build-summary.md
+          echo "- Security Analysis: ${{ needs.security-analysis.result }}" >> build-summary.md
+          echo "" >> build-summary.md
+          echo "Build completed at: $(date)" >> build-summary.md
+
+      - name: Comment build summary on PR
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('build-summary.md', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+  # Conditional jobs for main branch
+  staging-deployment:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-summary
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Deploy to staging
+        env:
+          SEPOLIA_RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          DEPLOYER_PRIVATE_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+        run: npm run deploy:sepolia
+
+      - name: Verify deployment
+        run: npm run verify-deployment:sepolia
+
+      - name: Update deployment status
+        run: |
+          echo "Staging deployment completed successfully" >> $GITHUB_STEP_SUMMARY
+          echo "Contracts deployed to Sepolia testnet" >> $GITHUB_STEP_SUMMARY
