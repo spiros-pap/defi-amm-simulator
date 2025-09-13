@@ -122,4 +122,98 @@ contract VaultManager is ReentrancyGuard, AccessControl {
         healthy = (debt * 10000) <= (collateralValueWad * ltvBps) / 1e14; // (valueWad * ltvBps / 1e4) >= debt
         // simplified: multiply first to keep precision; both sides in WAD
     }
+
+    // =============================================================================
+    // LIQUIDATION INTEGRATION
+    // =============================================================================
+
+    address public liquidationEngine;
+    bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
+
+    event VaultFlagged(uint256 indexed vaultId, address indexed user, bytes32 indexed collateralKey);
+    event LiquidationSettled(uint256[] vaultIds, uint256[] filledQty, uint256 clearingPrice);
+
+    error NotLiquidationEngine();
+    error VaultHealthy();
+
+    modifier onlyLiquidationEngine() {
+        if (msg.sender != liquidationEngine) revert NotLiquidationEngine();
+        _;
+    }
+
+    /**
+     * @notice Set the liquidation engine address
+     * @param _liquidationEngine Address of the liquidation engine
+     */
+    function setLiquidationEngine(address _liquidationEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        liquidationEngine = _liquidationEngine;
+    }
+
+    /**
+     * @notice Flag a vault for liquidation when health < MCR
+     * @param vaultId The vault ID (for now we'll use a simple mapping approach)
+     * @dev This is a simplified implementation - in production we'd have proper vault ID management
+     */
+    function flagForLiquidation(uint256 vaultId) external {
+        // For this implementation, we'll use a simple approach where vaultId maps to user+collateral
+        // In production, this would be more sophisticated with proper vault management
+        
+        // For demo purposes, let's assume vaultId encodes user address and collateral key
+        // This is a simplified implementation for the MVP
+        
+        // Call liquidation engine to enqueue the vault
+        ILiquidationEngine(liquidationEngine).enqueue(vaultId);
+        
+        emit VaultFlagged(vaultId, msg.sender, bytes32(0)); // Simplified event
+    }
+
+    /**
+     * @notice Called by liquidation engine when settlement occurs
+     * @param vaultIds Array of vault IDs being settled
+     * @param filledQty Array of collateral quantities filled for each vault
+     * @param clearingPrice The uniform clearing price used
+     */
+    function onLiquidationSettle(
+        uint256[] calldata vaultIds,
+        uint256[] calldata filledQty,
+        uint256 clearingPrice
+    ) external onlyLiquidationEngine {
+        require(vaultIds.length == filledQty.length, "Array length mismatch");
+
+        for (uint256 i = 0; i < vaultIds.length; i++) {
+            uint256 vaultId = vaultIds[i];
+            uint256 qty = filledQty[i];
+            
+            if (qty > 0) {
+                // In a full implementation, we would:
+                // 1. Burn the borrower's debt proportional to liquidated collateral
+                // 2. Transfer collateral from vault to liquidation winners
+                // 3. Apply liquidation fee (LFR)
+                // 4. Update vault state
+                
+                // For MVP, we'll emit an event to track the settlement
+                // TODO: Implement actual debt burning and collateral transfer
+            }
+        }
+
+        emit LiquidationSettled(vaultIds, filledQty, clearingPrice);
+    }
+
+    /**
+     * @notice Check vault health for liquidation eligibility
+     * @param vaultId The vault ID to check
+     * @return healthRatio The health ratio (0 = unhealthy, >MCR = healthy)
+     */
+    function health(uint256 vaultId) external view returns (uint256 healthRatio) {
+        // Simplified implementation - in production this would look up actual vault data
+        // For MVP, we'll return a mock health ratio
+        // TODO: Implement proper vault health calculation
+        return 150e16; // 150% health ratio (1.5 in WAD format)
+    }
+
+}
+
+// Interface for liquidation engine
+interface ILiquidationEngine {
+    function enqueue(uint256 vaultId) external;
 }
