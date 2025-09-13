@@ -47,7 +47,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
   "devDependencies": {
     "@nomicfoundation/hardhat-ignition": "^3.0.2",
