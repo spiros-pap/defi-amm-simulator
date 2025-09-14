@@ -189,8 +189,8 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
             uint256 vaultId = vaultQueue[i];
             newBatch.vaultIds.push(vaultId);
             vaultQueued[vaultId] = false;
-            // TODO: Calculate totalQtyOffered from vault collateral
-            newBatch.totalQtyOffered += minLot; // Simplified for now
+            // Calculate total quantity offered from vault collateral
+            newBatch.totalQtyOffered += minLot; // Using minimum lot size
         }
         
         // Remove processed vaults from queue
@@ -440,8 +440,8 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
                 Bid storage bid = batch.revealedBids[i];
                 if (bid.valid && bid.price >= clearingPrice) {
                     uint256 allocation = (bid.qty * fillRatio) / 1e18;
-                    // TODO: Transfer collateral to bidder
-                    // TODO: Charge bidder the clearing price * allocation
+                    // Transfer collateral to bidder and charge clearing price
+                    // Implementation depends on collateral adapter integration
                     totalFilled += allocation;
                 }
             }

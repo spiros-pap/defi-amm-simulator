@@ -1,6 +1,39 @@
+# Dependencies
 node_modules/
+
+# Build artifacts
 artifacts/
 cache/
-coverage/
 typechain-types/
+out/
+build/
+
+# Testing and coverage
+coverage/
+coverage.json
+.nyc_output/
+
+# Environment variables and secrets
 .env
+.env.local
+.env.*.local
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Deployment artifacts (network specific)
+deployments/localhost/
+deployments/hardhat/
