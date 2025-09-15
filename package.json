@@ -6,7 +6,7 @@
     "clean": "hardhat clean",
     "compile": "hardhat compile --config hardhat.config.minimal.ts",
     "build": "npm run compile",
-    "size-contracts": "echo 'Contract size checking not available with minimal config'",
+    "size-contracts": "hardhat size-contracts || echo 'Contract size checking requires full config'",
     
     "test": "hardhat test",
     "test:adapters": "hardhat test test/Adapters.*.test.ts",

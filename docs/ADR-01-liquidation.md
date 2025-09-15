@@ -1,7 +1,7 @@
 # ADR-01: Liquidation Mechanism Selection - Commit-Reveal Batch Auction
 
 ## Status
-**Accepted** - Implementation planned for Day 3
+**Implemented** - Production-ready commit-reveal batch auction system
 
 ## Context
 The lending protocol requires a liquidation mechanism to handle undercollateralized positions while minimizing MEV (Maximal Extractable Value) extraction and ensuring fair price discovery. Traditional liquidation methods suffer from front-running, sandwich attacks, and unfair price execution.

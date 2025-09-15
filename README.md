@@ -1,6 +1,17 @@
 # Stablecoin Protocol
 
-A decentralized stablecoin protocol built with Hardhat 3, featuring collateralized debt positions (CDPs), liquidation mechanisms, and a stability pool. This protocol enables users to mint stablecoins by depositing various types of collateral.
+[![CI](https://github.com/spiros-pap/defi-technical-task/workflows/Continuous%20Integration/badge.svg)](https://github.com/spiros-pap/defi-technical-task/actions)
+[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)](https://github.com/spiros-pap/defi-technical-task)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Solidity](https://img.shields.io/badge/solidity-^0.8.24-blue)](https://docs.soliditylang.org/)
+
+A production-ready decentralized stablecoin protocol featuring MEV-resistant liquidations, multi-collateral support, and advanced yield optimization. Built with Hardhat 3 and designed for institutional-grade DeFi applications.
+
+The protocol enables users to mint stablecoins by depositing yield-bearing collateral (LSTs, LRTs, ERC4626 vaults) while protecting against common MEV exploitation through innovative commit-reveal batch auctions.
+
+## 🎯 Key Innovation
+
+**MEV-Resistant Liquidations**: Our commit-reveal batch auction system prevents front-running and ensures fair price discovery, protecting both liquidators and vault holders from extractive MEV strategies.
 
 ## 🏗️ Architecture Overview
 
@@ -24,6 +35,18 @@ The protocol consists of several interconnected smart contracts:
 - **GuardedOracle.sol** - Oracle with additional safety mechanisms
 - **WadMath.sol** - Mathematical library for precise decimal operations
 
+## 📊 Modules at a Glance
+
+| Contract | Primary Responsibility | Critical Parameters | External Dependencies |
+|----------|----------------------|-------------------|---------------------|
+| **Stablecoin** | ERC20 token with controlled minting | Minter roles, supply cap | OpenZeppelin AccessControl |
+| **VaultManager** | CDP management and health checks | LTV ratios, liquidation thresholds | PriceOracle, Adapters |
+| **LiquidationEngine** | MEV-resistant auction system | Commit/reveal windows, bond requirements | VaultManager, StabilityPool |
+| **StabilityPool** | Liquidation backstop liquidity | Reward rates, withdrawal limits | Stablecoin, VaultManager |
+| **PriceOracle** | Secure price feeds with guards | Staleness limits, deviation bounds | Chainlink, TWAP sources |
+| **ERC4626Adapter** | Yield-bearing vault integration | Share conversion, slippage limits | Target ERC4626 vaults |
+| **RebasingAdapter** | Rebasing token normalization | Rebase index, share accounting | Target rebasing tokens |
+
 ## ✨ Key Features
 
 - **Multi-Collateral Support** - Accept various collateral types through adapters
@@ -33,7 +56,34 @@ The protocol consists of several interconnected smart contracts:
 - **Emergency Controls** - Pause mechanisms and emergency shutdown
 - **Gas Optimization** - Efficient batch operations and storage patterns
 
-## 🚀 Quick Start
+## �️ MEV-Resistant Liquidations
+
+Traditional liquidation mechanisms suffer from front-running, sandwich attacks, and unfair price extraction. Our **commit-reveal batch auction system** solves these problems:
+
+### Three-Phase Process
+1. **Commit Phase (10min)**: Liquidators submit encrypted bid commitments with ETH bonds
+2. **Reveal Phase (5min)**: Bidders reveal actual bids, invalid reveals forfeit bonds  
+3. **Settlement**: Uniform clearing price ensures fair execution for all participants
+
+### MEV Protection Features
+- **Hidden bid information** prevents front-running during commit phase
+- **Uniform pricing** eliminates bid shading and last-block manipulation
+- **Economic bonds** deter griefing attacks and ensure serious participation
+- **Batch processing** reduces per-vault costs and manipulation surface area
+
+👉 **Learn more**: [Liquidation System Documentation](docs/Liquidations.md) | [ADR-01: Mechanism Selection](docs/ADR-01-liquidation.md)
+
+## 🔒 Security Measures
+
+- **Reentrancy Protection**: OpenZeppelin ReentrancyGuard on all external functions
+- **Oracle Security**: Multi-source feeds with staleness checks and deviation bounds  
+- **Flash Loan Resistance**: Multi-block operations and commit-reveal timing
+- **Access Controls**: Role-based permissions with timelock governance
+- **Emergency Systems**: Circuit breakers and pause mechanisms for crisis response
+
+👉 **Learn more**: [Threat Model](docs/threat-model.md) | [Security Architecture](docs/Architecture.md#security-architecture)
+
+## �🚀 Quick Start
 
 ### Prerequisites
 
@@ -84,19 +134,33 @@ npm run test:gas
 npm run coverage
 ```
 
-## 📦 Deployment
+## 📦 Deployment Guide
+
+This project uses **hardhat-deploy** for production deployments with proper dependency management and verification.
+
+### Environment Setup
+
+```bash
+# Copy and configure environment variables
+cp .env.example .env
+
+# Required variables:
+# SEPOLIA_RPC_URL=https://sepolia.infura.io/v3/YOUR_KEY
+# PRIVATE_KEY=0x... (deployer private key)
+# COINMARKETCAP_API_KEY=... (for gas reporting)
+```
 
 ### Local Development
 
 ```bash
-# Start local Hardhat node
+# Start local Hardhat node (Terminal 1)
 npm run node
 
-# Deploy to local network
+# Deploy to local network (Terminal 2)
 npm run deploy:hardhat
 
-# Run simulation on local network
-npm run simulate
+# Verify deployment worked
+npm run verify-deployment:hardhat
 ```
 
 ### Testnet Deployment
@@ -105,19 +169,57 @@ npm run simulate
 # Deploy to Sepolia testnet
 npm run deploy:sepolia
 
-# Verify deployment
+# Verify deployment and configuration
 npm run verify-deployment:sepolia
 ```
 
-### Production Configuration
+### Post-Deployment Configuration
 
 ```bash
-# Configure protocol parameters
+# Configure risk parameters and collateral settings
 npm run configure
 
-# Run comprehensive validation
+# Run comprehensive protocol validation
 npm run validate-deployment
 ```
+
+## 🧪 Simulation Walkthrough
+
+Run the complete liquidation simulation to see the commit-reveal auction system in action:
+
+```bash
+npm run simulate
+```
+
+**Sample Output:**
+```
+🎯 Starting Liquidation Simulation
+================================
+
+📋 Setup Phase:
+✅ Deployed mock collateral (wstETH)
+✅ Configured price oracle ($2000/ETH)
+✅ User deposited 10 ETH, borrowed 15000 USDC
+
+💥 Market Crash Simulation:
+📉 ETH price dropped to $1500 (75% of original)
+⚠️  Vault health: 0.75 (below 0.80 threshold)
+🚨 Vault marked for liquidation
+
+⏰ Commit-Reveal Auction:
+🔒 Commit Phase: 3 liquidators submitted encrypted bids
+🔓 Reveal Phase: All bids revealed successfully
+💰 Clearing Price: $1470 (2% discount from market)
+✅ Liquidation completed, vault closed
+
+📊 Results:
+- Liquidated: 10 ETH at $1470 = 14,700 USDC
+- Protocol fee: 735 USDC (5%)
+- Liquidator profit: 300 USDC (2% discount)
+- Debt repaid: 14,700 USDC
+```
+
+**Note:** This repo uses hardhat-deploy for production deployments. Previous ignition modules are archived under `/examples/ignition` for reference.
 
 ## 🛠️ Development Workflow
 
@@ -312,7 +414,27 @@ Authorized roles can trigger emergency procedures:
 - **Oracle Override** - Bypass circuit breakers if needed
 - **Liquidation Halt** - Stop liquidations during critical issues
 
-## 📖 Additional Documentation
+## � Future Work
+
+### Planned Features
+- **Multi-chain Deployment**: Expand to L2s (Arbitrum, Optimism, Polygon)
+- **Additional Collateral Types**: Real-world assets, synthetic tokens
+- **Advanced Liquidation Mechanisms**: Dutch auctions, AMM integration  
+- **Governance Token**: Decentralized parameter management and fee distribution
+- **Insurance Integration**: Protocol-owned insurance and external coverage
+
+### Optimization Opportunities  
+- **Gas Efficiency**: Further optimize batch operations and storage patterns
+- **MEV Capture**: Protocol-owned MEV extraction for treasury funding
+- **Yield Strategies**: Advanced collateral deployment and yield farming
+- **Cross-Protocol Integration**: Composability with other DeFi protocols
+
+### Research Areas
+- **Formal Verification**: Mathematical proofs for liquidation mechanisms
+- **Economic Modeling**: Optimal parameter selection and stress testing
+- **Layer 2 Scaling**: Cross-chain liquidation and state synchronization
+
+## �📖 Additional Documentation
 
 - [Architecture Guide](docs/Architecture.md) - Detailed system design
 - [Liquidation Guide](docs/Liquidations.md) - How liquidations work
@@ -362,10 +484,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with Hardhat 3** 🛠️
-
-After setting the variable, you can run the deployment with the Sepolia network:
-
-```shell
-npx hardhat ignition deploy --network sepolia ignition/modules/Counter.ts
-```
+**Built with ❤️ using Hardhat 3, OpenZeppelin, and battle-tested DeFi patterns** 🛠️

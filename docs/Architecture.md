@@ -79,7 +79,7 @@ sequenceDiagram
     Stablecoin-->>User: stablecoins
 ```
 
-### 2. Liquidation Flow (Day 3)
+### 2. Liquidation Flow
 
 ```mermaid
 sequenceDiagram
@@ -218,7 +218,7 @@ struct StabilityDeposit {
 }
 ```
 
-### 5. LiquidationEngine (Day 3 Implementation)
+### 5. LiquidationEngine Implementation
 
 **Commit-Reveal Architecture:**
 ```solidity
@@ -344,7 +344,7 @@ interface ILiquidationModule {
 4. Collateral adapters (`ERC4626Adapter`, `RebasingAdapter`)
 5. `StabilityPool` 
 6. `VaultManager` (with all dependencies)
-7. `LiquidationEngine` (Day 3)
+7. `LiquidationEngine` (MEV-resistant auctions)
 
 ### Configuration Setup
 1. Set oracle price feeds for each collateral
