@@ -1,9 +1,10 @@
 # Stablecoin Protocol
 
-[![CI](https://github.com/spiros-pap/defi-technical-task/workflows/Continuous%20Integration/badge.svg)](https://github.com/spiros-pap/defi-technical-task/actions)
-[![Coverage](https://img.shields.io/badge/coverage-95%25-brightgreen)](https://github.com/spiros-pap/defi-technical-task)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Solidity](https://img.shields.io/badge/solidity-^0.8.24-blue)](https://docs.soliditylang.org/)
+[![Hardhat](https://img.shields.io/badge/hardhat-3.x-orange)](https://hardhat.org/)
+[![Documentation](https://img.shields.io/badge/docs-comprehensive-brightgreen)](https://github.com/spiros-pap/defi-technical-task/tree/main/docs)
+[![Security Policy](https://img.shields.io/badge/security-policy-blue)](https://github.com/spiros-pap/defi-technical-task/blob/main/SECURITY.md)
 
 A production-ready decentralized stablecoin protocol featuring MEV-resistant liquidations, multi-collateral support, and advanced yield optimization. Built with Hardhat 3 and designed for institutional-grade DeFi applications.
 
@@ -15,13 +16,35 @@ The protocol enables users to mint stablecoins by depositing yield-bearing colla
 
 ## 🏗️ Architecture Overview
 
-The protocol consists of several interconnected smart contracts:
+The protocol is a **yield-bearing stablecoin lending system** that supports ERC4626 vault adapters and rebasing tokens as collateral. It features MEV-resistant liquidations through commit-reveal batch auctions and modular components for extensibility.
+
+### Core Design Principles
+
+1. **Modular Architecture**: Separate concerns through adapter patterns
+2. **MEV Resistance**: Commit-reveal auctions prevent front-running
+3. **Yield Optimization**: Auto-compounding collateral improves health
+4. **Security First**: Multiple defense layers and circuit breakers
+5. **Gas Efficiency**: Optimized for reasonable transaction costs
+
+### System Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Protocol Overview                        │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│   Stablecoin    │   VaultManager  │    LiquidationEngine    │
+│   (ERC20)       │   (Core Logic)  │   (Commit-Reveal)       │
+├─────────────────┼─────────────────┼─────────────────────────┤
+│  StabilityPool  │   PriceOracle   │    Collateral Adapters  │
+│  (Liquidations) │   (Price Feeds) │   (ERC4626 + Rebasing)  │
+└─────────────────┴─────────────────┴─────────────────────────┘
+```
 
 ### Core Contracts
 
-- **Stablecoin.sol** - ERC20 stablecoin token with minting/burning controls
+- **Stablecoin.sol** - ERC20 stablecoin token with role-based minting controls
 - **VaultManager.sol** - Manages user vaults (CDPs) and collateral positions  
-- **LiquidationEngine.sol** - Handles liquidations through commit-reveal auctions
+- **LiquidationEngine.sol** - MEV-resistant commit-reveal batch auction system
 - **StabilityPool.sol** - Provides liquidation liquidity and stability mechanisms
 - **PriceOracle.sol** - Secure price feeds with validation and circuit breakers
 
@@ -32,8 +55,10 @@ The protocol consists of several interconnected smart contracts:
 
 ### Supporting Contracts
 
-- **GuardedOracle.sol** - Oracle with additional safety mechanisms
+- **GuardedOracle.sol** - Oracle with additional safety mechanisms and circuit breakers
 - **WadMath.sol** - Mathematical library for precise decimal operations
+
+👉 **Detailed Architecture**: See [Architecture.md](docs/Architecture.md) for complete system design, data flow diagrams, and module relationships.
 
 ## 📊 Modules at a Glance
 
@@ -56,7 +81,7 @@ The protocol consists of several interconnected smart contracts:
 - **Emergency Controls** - Pause mechanisms and emergency shutdown
 - **Gas Optimization** - Efficient batch operations and storage patterns
 
-## �️ MEV-Resistant Liquidations
+## 🛡️ MEV-Resistant Liquidations
 
 Traditional liquidation mechanisms suffer from front-running, sandwich attacks, and unfair price extraction. Our **commit-reveal batch auction system** solves these problems:
 
@@ -83,7 +108,7 @@ Traditional liquidation mechanisms suffer from front-running, sandwich attacks, 
 
 👉 **Learn more**: [Threat Model](docs/threat-model.md) | [Security Architecture](docs/Architecture.md#security-architecture)
 
-## �🚀 Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
 
@@ -414,7 +439,7 @@ Authorized roles can trigger emergency procedures:
 - **Oracle Override** - Bypass circuit breakers if needed
 - **Liquidation Halt** - Stop liquidations during critical issues
 
-## � Future Work
+## 🚀 Future Work
 
 ### Planned Features
 - **Multi-chain Deployment**: Expand to L2s (Arbitrum, Optimism, Polygon)
@@ -434,7 +459,7 @@ Authorized roles can trigger emergency procedures:
 - **Economic Modeling**: Optimal parameter selection and stress testing
 - **Layer 2 Scaling**: Cross-chain liquidation and state synchronization
 
-## �📖 Additional Documentation
+## 📖 Additional Documentation
 
 - [Architecture Guide](docs/Architecture.md) - Detailed system design
 - [Liquidation Guide](docs/Liquidations.md) - How liquidations work
