@@ -396,8 +396,9 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: build-summary
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: staging
+    # Trigger deployment on staging branch
+    if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
+    # Note: Make sure SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY secrets are set in GitHub repo settings
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
