@@ -8,11 +8,14 @@
 
 <!-- CI badge intentionally omitted until pipeline is stable. For details, see .github/workflows/ci.yml. -->
 
-> **CI/CD Note:**
-> To enable successful deployments and avoid CI failures, set the following GitHub repository secrets:
-> - `SEPOLIA_RPC_URL`: Your Sepolia RPC endpoint
-> - `DEPLOYER_PRIVATE_KEY`: Private key for deployment (never commit this to the repo)
-> These are required for the deployment job in `.github/workflows/ci.yml`.
+## CI/CD Setup Requirements
+
+To enable automated deployments and ensure successful CI runs, configure the following GitHub repository secrets:
+
+- `SEPOLIA_RPC_URL`: Sepolia network RPC endpoint (used for contract deployment)
+- `DEPLOYER_PRIVATE_KEY`: Private key for the deployer account (required for deployment; never commit this value)
+
+These secrets are required for the deployment workflow defined in `.github/workflows/ci.yml`. For details on configuring secrets, refer to the [GitHub documentation](https://docs.github.com/en/actions/security-guides/encrypted-secrets).
 
 A production-ready decentralized stablecoin protocol featuring MEV-resistant liquidations, multi-collateral support, and advanced yield optimization. Built with Hardhat 3 and designed for institutional-grade DeFi applications.
 
