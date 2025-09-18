@@ -2,7 +2,7 @@ import "@nomicfoundation/hardhat-viem";
 import "@nomicfoundation/hardhat-mocha";
 import "hardhat-deploy";
 // import "hardhat-gas-reporter"; // Removed for Hardhat v3 compatibility
-import "solidity-coverage";
+// import "solidity-coverage"; // Removed for Hardhat v3 compatibility
 
 import { HardhatUserConfig } from "hardhat/config";
 import * as dotenv from "dotenv";
