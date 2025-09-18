@@ -150,7 +150,10 @@ npm run size-contracts
 ### Testing
 
 ```bash
-# Run all tests
+# Run all tests (use minimal config for Hardhat v3 compatibility)
+npx hardhat test --config hardhat.config.minimal.ts
+
+# Or use npm scripts (may require minimal config)
 npm test
 
 # Run specific test categories
@@ -159,7 +162,6 @@ npm run test:vault        # Vault management
 npm run test:liquidation  # Liquidation mechanisms
 npm run test:security     # Security and access controls
 npm run test:integration  # Full integration tests
-
 
 # Coverage and gas reporting are temporarily disabled due to Hardhat v3 incompatibility.
 ```
