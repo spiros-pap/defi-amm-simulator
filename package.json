@@ -2,7 +2,6 @@
   "name": "stablecoin-protocol",
   "version": "1.0.0",
   "main": "index.js",
-  "scripts": {
     "clean": "hardhat clean",
     "compile": "hardhat compile --config hardhat.config.minimal.ts",
     "build": "npm run compile",
@@ -15,7 +14,9 @@
     "test:liquidation": "hardhat test test/Liquidation.*.test.ts",
     "test:security": "hardhat test test/Security.*.test.ts",
     "test:integration": "hardhat test test/full-integration.ts test/*integration*.test.ts",
-    "test:gas": "REPORT_GAS=true hardhat test",
+  "engines": {
+    "node": ">=18 <=22"
+  },
     "test:access-control": "hardhat test test/Security.access.test.ts",
     "test:reentrancy": "hardhat test test/Security.reentrancy.test.ts",
     
@@ -65,7 +66,6 @@
     "forge-std": "github:foundry-rs/forge-std#v1.9.4",
     "hardhat": "^3.0.6",
     "hardhat-deploy": "^1.0.4",
-    "hardhat-gas-reporter": "^2.3.0",
     "mocha": "^10.8.2",
     "prettier": "^3.6.2",
     "prettier-plugin-solidity": "^1.4.3",
@@ -76,7 +76,7 @@
     "tsx": "^4.20.5",
     "typescript": "~5.8.0",
     "viem": "^2.37.5"
-  },
+  }
   "type": "module",
   "dependencies": {
     "@openzeppelin/contracts": "^5.4.0"

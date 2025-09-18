@@ -1,7 +1,7 @@
 import "@nomicfoundation/hardhat-viem";
 import "@nomicfoundation/hardhat-mocha";
 import "hardhat-deploy";
-import "hardhat-gas-reporter";
+// import "hardhat-gas-reporter"; // Removed for Hardhat v3 compatibility
 import "solidity-coverage";
 
 import { HardhatUserConfig } from "hardhat/config";
@@ -48,11 +48,11 @@ const config: HardhatUserConfig = {
       sepolia: process.env.LIQUIDATOR_ADDRESS || 3,
     },
   },
-  gasReporter: {
-    enabled: process.env.REPORT_GAS ? true : false,
-    currency: "USD",
-    gasPrice: 20,
-  },
+  // gasReporter: { // Removed for Hardhat v3 compatibility
+  //   enabled: process.env.REPORT_GAS ? true : false,
+  //   currency: "USD",
+  //   gasPrice: 20,
+  // },
 };
 
 export default config;

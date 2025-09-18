@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ matrix.node-version }}
           cache: 'npm'
 
       - name: Install dependencies
@@ -68,38 +68,39 @@ jobs:
         with:
           sarif_file: ${{ steps.slither.outputs.sarif }}
 
-  compile:
-    name: Contract Compilation
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
+  jobs:
+    lint:
+      name: Code Linting
+      runs-on: ubuntu-latest
+      strategy:
+        matrix:
+          node-version: [18, 20, 22]
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v4
+          with:
+            submodules: recursive
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: ${{ matrix.node-version }}
+            cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
+        - name: Compile contracts
+          run: npm run compile
 
-      - name: Compile contracts
-        run: npm run compile
+        - name: Check contract sizes
+          run: npm run size-contracts
 
-      - name: Check contract sizes
-        run: npm run size-contracts
-
-      - name: Upload compilation artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: compilation-artifacts
-          path: |
-            artifacts/
-            cache/
-            typechain-types/
+        - name: Upload compilation artifacts
+          uses: actions/upload-artifact@v3
+          with:
+            name: compilation-artifacts
+            path: |
+              artifacts/
+              cache/
+              typechain-types/
 
   unit-tests:
     name: Unit Tests
@@ -345,21 +346,15 @@ jobs:
   build-summary:
     name: Build Summary
     runs-on: ubuntu-latest
-    needs: [
-      lint,
-      security-audit,
-      unit-tests,
-      integration-tests,
-      coverage,
-      gas-analysis,
-      deployment-test,
-      security-analysis
-    ]
-    if: always()
+    needs:
+      - lint
+      - security-audit
+      - unit-tests
+      - integration-tests
+      - coverage
+      - deployment-test
+      - security-analysis
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v3
-
       - name: Generate build summary
         run: |
           echo "# 🏗️ Build Summary" > build-summary.md
@@ -370,35 +365,15 @@ jobs:
           echo "- Unit Tests: ${{ needs.unit-tests.result }}" >> build-summary.md
           echo "- Integration Tests: ${{ needs.integration-tests.result }}" >> build-summary.md
           echo "- Coverage: ${{ needs.coverage.result }}" >> build-summary.md
-          echo "- Gas Analysis: ${{ needs.gas-analysis.result }}" >> build-summary.md
           echo "- Deployment: ${{ needs.deployment-test.result }}" >> build-summary.md
           echo "- Security Analysis: ${{ needs.security-analysis.result }}" >> build-summary.md
           echo "" >> build-summary.md
           echo "Build completed at: $(date)" >> build-summary.md
-
-      - name: Comment build summary on PR
-        uses: actions/github-script@v6
-        if: github.event_name == 'pull_request'
-        with:
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('build-summary.md', 'utf8');
-            
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: summary
-            });
-
-  # Conditional jobs for main branch
   staging-deployment:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: build-summary
-    # Trigger deployment on staging branch
     if: github.ref == 'refs/heads/staging' && github.event_name == 'push'
-    # Note: Make sure SEPOLIA_RPC_URL and DEPLOYER_PRIVATE_KEY secrets are set in GitHub repo settings
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -406,7 +381,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: 18
           cache: 'npm'
 
       - name: Install dependencies
