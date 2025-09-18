@@ -160,11 +160,8 @@ npm run test:liquidation  # Liquidation mechanisms
 npm run test:security     # Security and access controls
 npm run test:integration  # Full integration tests
 
-# Run with gas reporting
-npm run test:gas
 
-# Generate coverage report
-npm run coverage
+# Coverage and gas reporting are temporarily disabled due to Hardhat v3 incompatibility.
 ```
 
 ## 📦 Deployment Guide
