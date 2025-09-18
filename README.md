@@ -104,7 +104,6 @@ Traditional liquidation mechanisms suffer from front-running, sandwich attacks, 
 ### MEV Protection Features
 - **Hidden bid information** prevents front-running during commit phase
 - **Uniform pricing** eliminates bid shading and last-block manipulation
-- **Economic bonds** deter griefing attacks and ensure serious participation
 - **Batch processing** reduces per-vault costs and manipulation surface area
 
 👉 **Learn more**: [Liquidation System Documentation](docs/Liquidations.md) | [ADR-01: Mechanism Selection](docs/ADR-01-liquidation.md)
@@ -123,8 +122,9 @@ Traditional liquidation mechanisms suffer from front-running, sandwich attacks, 
 
 ### Prerequisites
 
-- Node.js v16+ and npm
-- Git for version control
+ Node.js v18.x, v20.x, or v22.x (LTS recommended)
+ npm (comes with Node.js)
+ Git for version control
 
 ### Installation
 
@@ -153,7 +153,10 @@ npm run size-contracts
 ### Testing
 
 ```bash
-# Run all tests
+# Run all tests (use minimal config for Hardhat v3 compatibility)
+npx hardhat test --config hardhat.config.minimal.ts
+
+# Or use npm scripts (may require minimal config)
 npm test
 
 # Run specific test categories
@@ -163,11 +166,7 @@ npm run test:liquidation  # Liquidation mechanisms
 npm run test:security     # Security and access controls
 npm run test:integration  # Full integration tests
 
-# Run with gas reporting
-npm run test:gas
-
-# Generate coverage report
-npm run coverage
+# Coverage and gas reporting are temporarily disabled due to Hardhat v3 incompatibility.
 ```
 
 ## 📦 Deployment Guide
@@ -344,6 +343,14 @@ LIQUIDATION_PENALTY=500   # 5% penalty
 ```
 
 ### Network Configuration
+## ⚙️ Requirements
+
+**Node.js:** v18, v20, or v22 (see `package.json` engines)
+**Hardhat:** v3.x
+
+> **Troubleshooting:**
+> - Hardhat v3.x is not compatible with `hardhat-gas-reporter`. Gas reporting is disabled; use coverage tools instead.
+> - If you encounter deep import errors, ensure all scripts use only public Hardhat APIs and update dependencies.
 
 The project supports multiple networks:
 
