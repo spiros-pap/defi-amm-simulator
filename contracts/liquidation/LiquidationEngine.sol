@@ -440,13 +440,22 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
                 Bid storage bid = batch.revealedBids[i];
                 if (bid.valid && bid.price >= clearingPrice) {
                     uint256 allocation = (bid.qty * fillRatio) / 1e18;
-                    // Transfer collateral to bidder and charge clearing price
-                    // Implementation depends on collateral adapter integration
-                    totalFilled += allocation;
+                    if (allocation > 0) {
+                        // Calculate payment owed by bidder
+                        uint256 payment = allocation * clearingPrice / 1e18;
+                        
+                        // Burn stablecoin from bidder for payment
+                        stabilityPool.burnStableFrom(bid.bidder, payment);
+                        
+                        // Transfer collateral to bidder via vault manager
+                        // Note: Actual collateral transfer handled in VaultManager.onLiquidationSettle
+                        
+                        totalFilled += allocation;
+                    }
                 }
             }
 
-            // Update vault manager
+            // Update vault manager with settlement details
             vaultManager.onLiquidationSettle(batch.vaultIds, filledQty, clearingPrice);
         }
     }
