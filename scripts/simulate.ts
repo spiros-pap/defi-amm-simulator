@@ -62,7 +62,7 @@ async function main() {
   console.log(`✅ Borrowed ${formatEther(userBalance)} stablecoin`);
 
   // Check vault health
-  const healthBefore = await vaultManager.read.health([user.account.address, collateralKey]);
+  const healthBefore = await vaultManager.read.xhealth([user.account.address, collateralKey]);
   console.log(`📊 Initial vault health: ${formatEther(healthBefore[0])} collateral value, ${formatEther(healthBefore[1])} debt`);
   console.log(`   Healthy: ${healthBefore[3]}`);
 

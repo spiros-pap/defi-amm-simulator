@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/AccessControl.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -30,7 +31,7 @@ interface IStabilityPool {
  * @notice Commit-reveal batch liquidation engine for MEV-resistant liquidations
  * @dev Implements uniform clearing price with commit-reveal auction mechanism
  */
-contract LiquidationEngine is ReentrancyGuard, AccessControl {
+contract LiquidationEngine is ReentrancyGuard, AccessControl, Pausable {
     using SafeERC20 for IERC20;
     using SafeCast for uint256;
 
@@ -64,6 +65,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
     error BatchAlreadySettled();
     error EmptyQueue();
     error VaultAlreadyQueued();
+    error BondRefundFailed();
 
 
 
@@ -141,6 +143,21 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         _grantRole(LIQUIDATOR_ROLE, msg.sender);
+        _grantRole(PAUSER_ROLE, msg.sender);
+    }
+
+    // =============================================================================
+    // EMERGENCY CONTROLS
+    // =============================================================================
+    
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+    
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
     }
 
     // =============================================================================
@@ -151,7 +168,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
      * @notice Enqueue a vault for liquidation
      * @param vaultId The vault to enqueue
      */
-    function enqueue(uint256 vaultId) external onlyRole(LIQUIDATOR_ROLE) {
+    function enqueue(uint256 vaultId) external whenNotPaused onlyRole(LIQUIDATOR_ROLE) {
         if (vaultQueued[vaultId]) revert VaultAlreadyQueued();
         
         vaultQueue.push(vaultId);
@@ -213,7 +230,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
      * @param batchId The batch ID to bid on
      * @param commitment Hash of the bid details
      */
-    function commitBid(uint256 batchId, bytes32 commitment) external payable nonReentrant {
+    function commitBid(uint256 batchId, bytes32 commitment) external payable whenNotPaused nonReentrant {
         if (batchId == 0 || batchId > activeBatchId) revert InvalidBatchId();
         if (msg.value < minCommitBond) revert InsufficientBond();
         
@@ -247,7 +264,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
         uint256 qty,
         uint256 price,
         bytes32 salt
-    ) external nonReentrant {
+    ) external whenNotPaused nonReentrant {
         if (batchId == 0 || batchId > activeBatchId) revert InvalidBatchId();
         
         Batch storage batch = batches[batchId];
@@ -280,7 +297,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
             uint256 bondAmount = bonds[batchId][msg.sender];
             bonds[batchId][msg.sender] = 0;
             (bool success, ) = msg.sender.call{value: bondAmount}("");
-            require(success, "Bond refund failed");
+            if (!success) revert BondRefundFailed();
             emit BondRefunded(batchId, msg.sender, bondAmount);
         }
 
@@ -295,7 +312,7 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
      * @notice Settle a batch after reveal window
      * @param batchId The batch to settle
      */
-    function settle(uint256 batchId) external nonReentrant {
+    function settle(uint256 batchId) external whenNotPaused nonReentrant {
         if (batchId == 0 || batchId > activeBatchId) revert InvalidBatchId();
         
         Batch storage batch = batches[batchId];
@@ -328,26 +345,34 @@ contract LiquidationEngine is ReentrancyGuard, AccessControl {
      * @notice Slash bonds for non-revealed or invalid commitments
      */
     function _slashBonds(uint256 batchId) internal {
-        // Create mapping of revealed bidders
         Batch storage batch = batches[batchId];
+        uint256 totalSlashed = 0;
         
-        // Track who made valid reveals
-        address[] memory validReveals = new address[](batch.revealedBids.length);
-        uint256 validCount = 0;
-        
+        // Process all revealed bidders and slash bonds for invalid bids
         for (uint256 i = 0; i < batch.revealedBids.length; i++) {
             Bid storage bid = batch.revealedBids[i];
-            if (bid.valid) {
-                validReveals[validCount] = bid.bidder;
-                validCount++;
+            address bidder = bid.bidder;
+            
+            // If bidder revealed but bid was invalid, slash their bond
+            if (!bid.valid && bonds[batchId][bidder] > 0) {
+                uint256 bondAmount = bonds[batchId][bidder];
+                bonds[batchId][bidder] = 0;
+                totalSlashed += bondAmount;
+                
+                emit BondSlashed(batchId, bidder, bondAmount);
             }
         }
-
-        // Slash bonds for non-revealed bidders
-        // Note: This is a simplified implementation
-        // In production, we'd need a more sophisticated way to track all commitments
         
-        emit BondSlashed(batchId, address(0), 0); // Placeholder event
+        // Note: In a production system, we would also need to track and slash
+        // bonds from bidders who committed but never revealed their bids.
+        // This would require maintaining an array of committed bidders.
+        
+        // Forward slashed bonds to stability pool or treasury
+        if (totalSlashed > 0) {
+            // In a real implementation, this would go to the protocol treasury
+            // For now, we keep the ETH in the contract as penalty for invalid bids
+            emit BondSlashed(batchId, address(this), totalSlashed);
+        }
     }
 
     /**
