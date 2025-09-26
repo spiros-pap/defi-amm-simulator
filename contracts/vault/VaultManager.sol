@@ -3,18 +3,30 @@ pragma solidity ^0.8.24;
 
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ICollateralAdapter} from "../interfaces/ICollateralAdapter.sol";
 import {Stablecoin} from "../Stablecoin.sol";
 import {GuardedOracle} from "../oracles/GuardedOracle.sol";
 import {WadMath} from "../lib/WadMath.sol";
 
-contract VaultManager is ReentrancyGuard, AccessControl {
+contract VaultManager is ReentrancyGuard, AccessControl, Pausable {
     using WadMath for uint256;
 
     bytes32 public constant RISK_ADMIN = keccak256("RISK_ADMIN");
+    bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+    
+    // Constants for precision and limits
+    uint256 private constant MAX_BPS = 10000;
+    uint256 private constant PRECISION_MULTIPLIER = 1e18;
 
     Stablecoin public immutable stable;
     GuardedOracle public immutable oracle;
+    
+    // Vault management state
+    uint256 public nextVaultId = 1;
+    mapping(uint256 => address) public vaultOwner;
+    mapping(address => uint256[]) public userVaults;
+    mapping(uint256 => bytes32) public vaultCollateralType;
 
     struct CollateralConfig {
         address adapter;       // adapter contract
@@ -25,102 +37,328 @@ contract VaultManager is ReentrancyGuard, AccessControl {
     struct Position {
         uint256 shares;        // collateral shares held by vault
         uint256 debt;          // stablecoin debt (WAD 1e18)
+        bool active;           // vault active status
     }
 
     mapping(bytes32 => CollateralConfig) public collaterals; // key: keccak256("ASSET")
     mapping(address => mapping(bytes32 => Position)) public positions;
+    mapping(uint256 => Position) public vaults; // New vault-based storage
 
     event SetCollateral(bytes32 indexed key, address adapter, uint16 ltvBps, bool enabled);
-    event Deposit(address indexed user, bytes32 indexed key, uint256 assets, uint256 shares);
-    event Withdraw(address indexed user, bytes32 indexed key, uint256 shares, uint256 assets);
-    event Borrow(address indexed user, uint256 amount);
-    event Repay(address indexed user, uint256 amount);
+    event VaultCreated(uint256 indexed vaultId, address indexed owner, bytes32 indexed collateralType);
+    event Deposit(address indexed user, uint256 indexed vaultId, bytes32 indexed key, uint256 assets, uint256 shares);
+    event Withdraw(address indexed user, uint256 indexed vaultId, bytes32 indexed key, uint256 shares, uint256 assets);
+    event Borrow(address indexed user, uint256 indexed vaultId, uint256 amount);
+    event Repay(address indexed user, uint256 indexed vaultId, uint256 amount);
 
+    // Custom errors for gas efficiency
     error CollateralDisabled();
     error UnsafePosition();
     error NotEnoughShares();
+    error VaultNotFound(uint256 vaultId);
+    error NotVaultOwner(uint256 vaultId, address caller);
+    error InvalidCollateralType(bytes32 collateralType);
+    error ArrayLengthMismatch();
+    error MathOverflow();
+    error InvalidAmount();
+    error VaultInactive(uint256 vaultId);
+    error LTVExceedsMaximum(uint16 ltv);
+    error InsufficientCollateral();
 
     constructor(Stablecoin _stable, GuardedOracle _oracle, address admin) {
         stable = _stable;
         oracle = _oracle;
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(RISK_ADMIN, admin);
+        _grantRole(PAUSER_ROLE, admin);
     }
 
-    // --- risk config ---
+    // =============================================================================
+    // EMERGENCY FUNCTIONS
+    // =============================================================================
+    
+    function pause() external onlyRole(PAUSER_ROLE) {
+        _pause();
+    }
+
+    function unpause() external onlyRole(PAUSER_ROLE) {
+        _unpause();
+    }
+
+    // =============================================================================
+    // MODIFIERS
+    // =============================================================================
+    
+    modifier onlyVaultOwner(uint256 vaultId) {
+        if (vaultOwner[vaultId] != msg.sender) revert NotVaultOwner(vaultId, msg.sender);
+        _;
+    }
+    
+    modifier vaultExists(uint256 vaultId) {
+        if (vaultOwner[vaultId] == address(0)) revert VaultNotFound(vaultId);
+        _;
+    }
+    
+    modifier vaultActive(uint256 vaultId) {
+        if (!vaults[vaultId].active) revert VaultInactive(vaultId);
+        _;
+    }
+    
+    modifier validAmount(uint256 amount) {
+        if (amount == 0) revert InvalidAmount();
+        _;
+    }
+
+    // =============================================================================
+    // VAULT MANAGEMENT FUNCTIONS
+    // =============================================================================
+    
+    /**
+     * @notice Create a new vault for a specific collateral type
+     * @param collateralType The collateral type identifier
+     * @return vaultId The ID of the newly created vault
+     */
+    function createVault(bytes32 collateralType) external whenNotPaused returns (uint256 vaultId) {
+        CollateralConfig memory config = collaterals[collateralType];
+        if (!config.enabled) revert InvalidCollateralType(collateralType);
+        
+        vaultId = nextVaultId++;
+        vaultOwner[vaultId] = msg.sender;
+        vaultCollateralType[vaultId] = collateralType;
+        userVaults[msg.sender].push(vaultId);
+        vaults[vaultId] = Position({shares: 0, debt: 0, active: true});
+        
+        emit VaultCreated(vaultId, msg.sender, collateralType);
+    }
+
+    // =============================================================================
+    // RISK CONFIG
+    // =============================================================================
+    
     function setCollateral(bytes32 key, address adapter, uint16 ltvBps, bool enabled) external onlyRole(RISK_ADMIN) {
+        if (ltvBps > MAX_BPS) revert LTVExceedsMaximum(ltvBps);
         collaterals[key] = CollateralConfig({adapter: adapter, ltvBps: ltvBps, enabled: enabled});
         emit SetCollateral(key, adapter, ltvBps, enabled);
     }
 
-    // --- flows ---
-    function deposit(bytes32 key, uint256 assets) external nonReentrant {
-        CollateralConfig memory c = collaterals[key];
-        if (!c.enabled) revert CollateralDisabled();
+    // =============================================================================
+    // VAULT OPERATIONS
+    // =============================================================================
+    
+    function deposit(uint256 vaultId, uint256 assets) 
+        external 
+        whenNotPaused 
+        nonReentrant 
+        vaultExists(vaultId)
+        onlyVaultOwner(vaultId)
+        vaultActive(vaultId)
+        validAmount(assets)
+    {
+        bytes32 collateralType = vaultCollateralType[vaultId];
+        CollateralConfig memory config = collaterals[collateralType];
+        if (!config.enabled) revert CollateralDisabled();
 
-        uint256 shares = ICollateralAdapter(c.adapter).depositFrom(msg.sender, assets, address(this));
-        positions[msg.sender][key].shares += shares;
+        uint256 shares = ICollateralAdapter(config.adapter).depositFrom(msg.sender, assets, address(this));
+        
+        // Safe math: check for overflow
+        uint256 newShares = vaults[vaultId].shares + shares;
+        if (newShares < vaults[vaultId].shares) revert MathOverflow();
+        
+        vaults[vaultId].shares = newShares;
 
-        emit Deposit(msg.sender, key, assets, shares);
+        emit Deposit(msg.sender, vaultId, collateralType, assets, shares);
     }
 
-    function withdraw(bytes32 key, uint256 shares, address receiver) external nonReentrant {
-        CollateralConfig memory c = collaterals[key];
-        Position storage p = positions[msg.sender][key];
-        if (p.shares < shares) revert NotEnoughShares();
+    function withdraw(uint256 vaultId, uint256 shares, address receiver) 
+        external 
+        whenNotPaused 
+        nonReentrant 
+        vaultExists(vaultId)
+        onlyVaultOwner(vaultId)
+        vaultActive(vaultId)
+        validAmount(shares)
+    {
+        Position storage vault = vaults[vaultId];
+        if (vault.shares < shares) revert NotEnoughShares();
 
-        uint256 assets = ICollateralAdapter(c.adapter).withdraw(shares, receiver, address(this));
-        p.shares -= shares;
+        bytes32 collateralType = vaultCollateralType[vaultId];
+        CollateralConfig memory config = collaterals[collateralType];
+        
+        uint256 assets = ICollateralAdapter(config.adapter).withdraw(shares, receiver, address(this));
+        vault.shares -= shares;
 
-        // post-withdraw health check
-        if (!_isHealthy(p, c, key)) revert UnsafePosition();
+        // Post-withdraw health check with overflow protection
+        if (!_isVaultHealthy(vaultId)) revert UnsafePosition();
 
-        emit Withdraw(msg.sender, key, shares, assets);
+        emit Withdraw(msg.sender, vaultId, collateralType, shares, assets);
     }
 
-    function borrow(bytes32 key, uint256 amount) external nonReentrant {
-        CollateralConfig memory c = collaterals[key];
-        Position storage p = positions[msg.sender][key];
-
-        p.debt += amount;
-        if (!_isHealthy(p, c, key)) { p.debt -= amount; revert UnsafePosition(); }
+    function borrow(uint256 vaultId, uint256 amount) 
+        external 
+        whenNotPaused 
+        nonReentrant 
+        vaultExists(vaultId)
+        onlyVaultOwner(vaultId)
+        vaultActive(vaultId)
+        validAmount(amount)
+    {
+        Position storage vault = vaults[vaultId];
+        
+        // Safe math: check for overflow
+        uint256 newDebt = vault.debt + amount;
+        if (newDebt < vault.debt) revert MathOverflow();
+        
+        vault.debt = newDebt;
+        if (!_isVaultHealthy(vaultId)) { 
+            vault.debt -= amount; 
+            revert UnsafePosition(); 
+        }
 
         stable.mint(msg.sender, amount);
-        emit Borrow(msg.sender, amount);
+        emit Borrow(msg.sender, vaultId, amount);
     }
 
-    function repay(bytes32 key, uint256 amount) external nonReentrant {
-        Position storage p = positions[msg.sender][key];
-        if (amount > p.debt) amount = p.debt;
+    function repay(uint256 vaultId, uint256 amount) 
+        external 
+        whenNotPaused 
+        nonReentrant 
+        vaultExists(vaultId)
+        onlyVaultOwner(vaultId)
+        vaultActive(vaultId)
+        validAmount(amount)
+    {
+        Position storage vault = vaults[vaultId];
+        if (amount > vault.debt) amount = vault.debt;
+        
         stable.burn(msg.sender, amount);
-        p.debt -= amount;
-        emit Repay(msg.sender, amount);
+        vault.debt -= amount;
+        
+        emit Repay(msg.sender, vaultId, amount);
     }
 
-    // --- views ---
+    // =============================================================================
+    // VIEW FUNCTIONS
+    // =============================================================================
+    
+    /**
+     * @notice Get vault health information
+     * @param vaultId The vault ID to check
+     * @return collateralValueWad Collateral value in WAD format
+     * @return debt Current debt amount
+     * @return ltvBps LTV in basis points
+     * @return healthy Whether the vault is healthy
+     */
+    function vaultHealth(uint256 vaultId) external view vaultExists(vaultId) returns (
+        uint256 collateralValueWad, 
+        uint256 debt, 
+        uint16 ltvBps, 
+        bool healthy
+    ) {
+        return _getVaultHealth(vaultId);
+    }
+
+    /**
+     * @notice Get user's vaults for a given collateral type (legacy compatibility)
+     */
     function health(address user, bytes32 key) external view returns (uint256 collateralValueWad, uint256 debt, uint16 ltvBps, bool healthy) {
         CollateralConfig memory c = collaterals[key];
         Position memory p = positions[user][key];
-        (collateralValueWad, debt, ltvBps, healthy) = _health(p, c, key);
+        return _health(p, c, key);
     }
 
-    function _isHealthy(Position memory p, CollateralConfig memory c, bytes32 key) internal view returns (bool) {
-        (, , , bool h) = _health(p, c, key);
-        return h;
+    /**
+     * @notice Check if a vault is healthy
+     * @param vaultId The vault ID to check
+     * @return Whether the vault is healthy
+     */
+    function _isVaultHealthy(uint256 vaultId) internal view returns (bool) {
+        (, , , bool healthy) = _getVaultHealth(vaultId);
+        return healthy;
     }
 
-    function _health(Position memory p, CollateralConfig memory c, bytes32 key) internal view returns (
+    /**
+     * @notice Get comprehensive vault health with overflow protection
+     */
+    function _getVaultHealth(uint256 vaultId) internal view returns (
+        uint256 collateralValueWad,
+        uint256 debt,
+        uint16 ltvBps,
+        bool healthy
+    ) {
+        Position memory vault = vaults[vaultId];
+        bytes32 collateralType = vaultCollateralType[vaultId];
+        CollateralConfig memory config = collaterals[collateralType];
+        
+        debt = vault.debt;
+        ltvBps = config.ltvBps;
+        
+        if (!config.enabled || !vault.active) {
+            return (0, debt, ltvBps, debt == 0);
+        }
+        
+        // Get collateral value with overflow protection
+        uint256 assets = ICollateralAdapter(config.adapter).valueOf(vault.shares);
+        (uint256 priceWad, ) = oracle.getPrice(ICollateralAdapter(config.adapter).asset());
+        
+        // Safe multiplication to prevent overflow
+        // Instead of assets * priceWad, we check bounds first
+        if (assets > 0 && priceWad > type(uint256).max / assets) {
+            revert MathOverflow();
+        }
+        collateralValueWad = assets * priceWad;
+        
+        // Health check with safe math: avoid debt * 10000 overflow
+        // Rearrange: debt * MAX_BPS <= collateralValueWad * ltvBps
+        // To: debt <= (collateralValueWad * ltvBps) / MAX_BPS
+        if (debt == 0) {
+            healthy = true;
+        } else if (collateralValueWad == 0) {
+            healthy = false;
+        } else {
+            // Check for overflow in collateralValueWad * ltvBps
+            if (collateralValueWad > type(uint256).max / ltvBps) {
+                // If this overflows, collateral is extremely high, so definitely healthy
+                healthy = true;
+            } else {
+                uint256 maxDebt = (collateralValueWad * ltvBps) / MAX_BPS;
+                healthy = debt <= maxDebt;
+            }
+        }
+    }
+
+    /**
+     * @notice Legacy health check function for backward compatibility
+     */
+    function _health(Position memory p, CollateralConfig memory c, bytes32 /* key */) internal view returns (
         uint256 collateralValueWad, uint256 debt, uint16 ltvBps, bool healthy
     ) {
         if (!c.enabled) return (0, p.debt, 0, p.debt == 0);
-        uint256 assets = ICollateralAdapter(c.adapter).valueOf(p.shares); // underlying units
-        (uint256 priceWad, ) = oracle.getPrice(ICollateralAdapter(c.adapter).asset());
-        // collateral value in WAD (USD)
-        collateralValueWad = assets.mulWad(priceWad);
+        
         debt = p.debt;
         ltvBps = c.ltvBps;
-        healthy = (debt * 10000) <= (collateralValueWad * ltvBps) / 1e14; // (valueWad * ltvBps / 1e4) >= debt
-        // simplified: multiply first to keep precision; both sides in WAD
+        
+        uint256 assets = ICollateralAdapter(c.adapter).valueOf(p.shares);
+        (uint256 priceWad, ) = oracle.getPrice(ICollateralAdapter(c.adapter).asset());
+        
+        // Safe multiplication
+        if (assets > 0 && priceWad > type(uint256).max / assets) {
+            revert MathOverflow();
+        }
+        collateralValueWad = assets * priceWad;
+        
+        // Safe health calculation
+        if (debt == 0) {
+            healthy = true;
+        } else if (collateralValueWad == 0) {
+            healthy = false;
+        } else {
+            if (collateralValueWad > type(uint256).max / ltvBps) {
+                healthy = true;
+            } else {
+                uint256 maxDebt = (collateralValueWad * ltvBps) / MAX_BPS;
+                healthy = debt <= maxDebt;
+            }
+        }
     }
 
     // =============================================================================
@@ -128,13 +366,15 @@ contract VaultManager is ReentrancyGuard, AccessControl {
     // =============================================================================
 
     address public liquidationEngine;
-    bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
-
-    event VaultFlagged(uint256 indexed vaultId, address indexed user, bytes32 indexed collateralKey);
+    uint256 public constant MCR_BPS = 12000; // 120% minimum collateralization ratio
+    
     event LiquidationSettled(uint256[] vaultIds, uint256[] filledQty, uint256 clearingPrice);
+    event CollateralLiquidated(uint256 indexed vaultId, address indexed owner, uint256 collateralQty, uint256 debtBurned, uint256 penalty);
+    event VaultFlagged(uint256 indexed vaultId, address indexed flagger, bytes32 indexed collateralKey);
 
     error NotLiquidationEngine();
-    error VaultHealthy();
+    error VaultHealthy(uint256 vaultId);
+    error InvalidLiquidationEngine();
 
     modifier onlyLiquidationEngine() {
         if (msg.sender != liquidationEngine) revert NotLiquidationEngine();
@@ -146,25 +386,61 @@ contract VaultManager is ReentrancyGuard, AccessControl {
      * @param _liquidationEngine Address of the liquidation engine
      */
     function setLiquidationEngine(address _liquidationEngine) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (_liquidationEngine == address(0)) revert InvalidLiquidationEngine();
         liquidationEngine = _liquidationEngine;
     }
 
     /**
      * @notice Flag a vault for liquidation when health < MCR
-     * @param vaultId The vault ID (for now we'll use a simple mapping approach)
-     * @dev This is a simplified implementation - in production we'd have proper vault ID management
+     * @param vaultId The vault ID to flag
+     * @dev Anyone can call this to trigger liquidation of unhealthy vaults
      */
-    function flagForLiquidation(uint256 vaultId) external {
-        // For this implementation, we'll use a simple approach where vaultId maps to user+collateral
-        // In production, this would be more sophisticated with proper vault management
-        
-        // For demo purposes, let's assume vaultId encodes user address and collateral key
-        // This is a simplified implementation for the MVP
+    function flagForLiquidation(uint256 vaultId) 
+        external 
+        whenNotPaused 
+        vaultExists(vaultId) 
+        vaultActive(vaultId)
+    {
+        if (!_isLiquidationEligible(vaultId)) revert VaultHealthy(vaultId);
         
         // Call liquidation engine to enqueue the vault
         ILiquidationEngine(liquidationEngine).enqueue(vaultId);
         
-        emit VaultFlagged(vaultId, msg.sender, bytes32(0)); // Simplified event
+        bytes32 collateralType = vaultCollateralType[vaultId];
+        emit VaultFlagged(vaultId, msg.sender, collateralType);
+    }
+
+    /**
+     * @notice Check if a vault is eligible for liquidation
+     * @param vaultId The vault ID to check
+     * @return eligible True if vault can be liquidated
+     */
+    function isLiquidationEligible(uint256 vaultId) external view returns (bool eligible) {
+        return _isLiquidationEligible(vaultId);
+    }
+    
+    /**
+     * @notice Internal function to check liquidation eligibility with safe math
+     */
+    function _isLiquidationEligible(uint256 vaultId) internal view returns (bool) {
+        Position memory vault = vaults[vaultId];
+        if (!vault.active || vault.debt == 0) return false;
+        
+        (uint256 collateralValueWad, uint256 debt, , ) = _getVaultHealth(vaultId);
+        
+        if (collateralValueWad == 0) return true; // No collateral but has debt
+        
+        // Check if collateralValueWad * MAX_BPS < debt * MCR_BPS
+        // Avoid overflow by rearranging: collateralValueWad < (debt * MCR_BPS) / MAX_BPS
+        
+        // Check for overflow in debt * MCR_BPS
+        if (debt > type(uint256).max / MCR_BPS) {
+            // If this overflows, debt is extremely high, so definitely liquidatable
+            return true;
+        }
+        
+        uint256 requiredCollateral = (debt * MCR_BPS) / MAX_BPS;
+        return collateralValueWad < requiredCollateral;
     }
 
     /**
@@ -177,38 +453,128 @@ contract VaultManager is ReentrancyGuard, AccessControl {
         uint256[] calldata vaultIds,
         uint256[] calldata filledQty,
         uint256 clearingPrice
-    ) external onlyLiquidationEngine {
-        require(vaultIds.length == filledQty.length, "Array length mismatch");
+    ) external whenNotPaused onlyLiquidationEngine {
+        if (vaultIds.length != filledQty.length) revert ArrayLengthMismatch();
 
         for (uint256 i = 0; i < vaultIds.length; i++) {
             uint256 vaultId = vaultIds[i];
             uint256 qty = filledQty[i];
             
             if (qty > 0) {
-                // In a full implementation, we would:
-                // 1. Burn the borrower's debt proportional to liquidated collateral
-                // 2. Transfer collateral from vault to liquidation winners
-                // 3. Apply liquidation fee (LFR)
-                // 4. Update vault state
-                
-                // For MVP, we'll emit an event to track the settlement
-                // Actual debt burning and collateral transfer handled by liquidation engine
+                _processVaultLiquidation(vaultId, qty);
             }
         }
 
         emit LiquidationSettled(vaultIds, filledQty, clearingPrice);
     }
+    
+    /**
+     * @notice Process liquidation for a specific vault with safe math
+     */
+    function _processVaultLiquidation(uint256 vaultId, uint256 qty) internal {
+        if (vaultOwner[vaultId] == address(0)) revert VaultNotFound(vaultId);
+        
+        Position storage vault = vaults[vaultId];
+        if (vault.shares < qty) revert NotEnoughShares();
+        
+        bytes32 collateralType = vaultCollateralType[vaultId];
+        CollateralConfig memory config = collaterals[collateralType];
+        
+        // Calculate debt to burn proportional to liquidated collateral with safe math
+        uint256 debtToBurn = 0;
+        if (vault.debt > 0 && vault.shares > 0) {
+            // Safe multiplication: debt * qty <= debt * shares
+            if (qty <= vault.shares) {
+                debtToBurn = (vault.debt * qty) / vault.shares;
+            } else {
+                // Should not happen, but protect against edge cases
+                debtToBurn = vault.debt;
+                qty = vault.shares;
+            }
+        }
+        
+        // Get collateral value for penalty calculation
+        uint256 totalCollateralValue = _getCollateralValue(vault.shares, config.adapter, collateralType);
+        uint256 liquidatedValue = 0;
+        if (vault.shares > 0) {
+            // Safe calculation
+            liquidatedValue = (totalCollateralValue * qty) / vault.shares;
+        }
+        
+        // Update vault state
+        vault.debt -= debtToBurn;
+        vault.shares -= qty;
+        
+        // Burn debt from stability pool
+        if (debtToBurn > 0) {
+            // Note: In production, this would interface with the stability pool
+            // For now, we emit the event for tracking
+        }
+        
+        // Calculate liquidation penalty with safe math (5%)
+        uint256 penalty = 0;
+        if (liquidatedValue > 0) {
+            // Check for overflow: liquidatedValue * 500 
+            if (liquidatedValue <= type(uint256).max / 500) {
+                penalty = (liquidatedValue * 500) / MAX_BPS; // 5% penalty
+            }
+        }
+        
+        address owner = vaultOwner[vaultId];
+        emit CollateralLiquidated(vaultId, owner, qty, debtToBurn, penalty);
+    }
 
     /**
-     * @notice Check vault health for liquidation eligibility
+     * @notice Check vault health for liquidation eligibility (returns health ratio)
      * @param vaultId The vault ID to check
-     * @return healthRatio The health ratio (0 = unhealthy, >MCR = healthy)
+     * @return healthRatio The health ratio in WAD format (1e18 = 100%)
      */
     function health(uint256 vaultId) external view returns (uint256 healthRatio) {
-        // Simplified implementation - in production this would look up actual vault data
-        // For MVP, we return a mock health ratio for demonstration
-        // Production version would calculate: collateralValue / debtValue
-        return 150e16; // 150% health ratio (1.5 in WAD format)
+        if (vaultOwner[vaultId] == address(0)) revert VaultNotFound(vaultId);
+        
+        (uint256 collateralValueWad, uint256 debt, , ) = _getVaultHealth(vaultId);
+        
+        // If no debt, vault is perfectly healthy
+        if (debt == 0) {
+            return type(uint256).max; // Infinite health ratio
+        }
+        
+        // If no collateral but has debt, vault is completely unhealthy
+        if (collateralValueWad == 0) {
+            return 0;
+        }
+        
+        // Calculate health ratio with safe math: (collateralValue / debt)
+        // Both values are already in WAD format (1e18)
+        if (collateralValueWad >= debt) {
+            // Safe division
+            healthRatio = (collateralValueWad * PRECISION_MULTIPLIER) / debt;
+        } else {
+            // Collateral worth less than debt
+            healthRatio = (collateralValueWad * PRECISION_MULTIPLIER) / debt;
+        }
+        
+        return healthRatio;
+    }
+
+    /**
+     * @notice Get collateral value for liquidation calculations
+     * @param shares Amount of collateral shares
+     * @param adapter Collateral adapter address
+     * @return value Total value of collateral in USD (WAD format)
+     */
+    function _getCollateralValue(uint256 shares, address adapter, bytes32 /* collateralKey */) internal view returns (uint256 value) {
+        // Get asset amount from shares
+        uint256 assets = ICollateralAdapter(adapter).valueOf(shares);
+        
+        // Get asset address from adapter
+        address asset = ICollateralAdapter(adapter).asset();
+        
+        // Get price from oracle
+        (uint256 price, ) = oracle.getPrice(asset);
+        
+        // Calculate total value
+        value = (assets * price) / 1e18;
     }
 
 }
