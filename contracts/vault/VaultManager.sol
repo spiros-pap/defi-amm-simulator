@@ -133,6 +133,7 @@ contract VaultManager is ReentrancyGuard, AccessControl {
     event VaultFlagged(uint256 indexed vaultId, address indexed user, bytes32 indexed collateralKey);
     event LiquidationSettled(uint256[] vaultIds, uint256[] filledQty, uint256 clearingPrice);
     event CollateralLiquidated(address indexed user, bytes32 indexed collateralKey, uint256 collateralQty, uint256 debtBurned, uint256 penalty);
+    event VaultFlagged(uint256 indexed vaultId, address indexed flagger, bytes32 indexed collateralKey);
 
     error NotLiquidationEngine();
     error VaultHealthy();
@@ -152,20 +153,28 @@ contract VaultManager is ReentrancyGuard, AccessControl {
 
     /**
      * @notice Flag a vault for liquidation when health < MCR
-     * @param vaultId The vault ID (for now we'll use a simple mapping approach)
-     * @dev This is a simplified implementation - in production we'd have proper vault ID management
+     * @param vaultId The vault ID to flag
+     * @dev Anyone can call this to trigger liquidation of unhealthy vaults
      */
     function flagForLiquidation(uint256 vaultId) external {
-        // For this implementation, we'll use a simple approach where vaultId maps to user+collateral
-        // In production, this would be more sophisticated with proper vault management
-        
-        // For demo purposes, let's assume vaultId encodes user address and collateral key
-        // This is a simplified implementation for the MVP
+        // Check if vault health is below minimum collateral ratio (MCR)
+        uint256 healthRatio = this.health(vaultId);
+        require(healthRatio < 120e16, "Vault is healthy"); // 120% MCR in WAD format
         
         // Call liquidation engine to enqueue the vault
         ILiquidationEngine(liquidationEngine).enqueue(vaultId);
         
-        emit VaultFlagged(vaultId, msg.sender, bytes32(0)); // Simplified event
+        emit VaultFlagged(vaultId, msg.sender, bytes32(uint256(1))); // Simplified collateral key
+    }
+
+    /**
+     * @notice Check if a vault is eligible for liquidation
+     * @param vaultId The vault ID to check
+     * @return eligible True if vault can be liquidated
+     */
+    function isLiquidationEligible(uint256 vaultId) external view returns (bool eligible) {
+        uint256 healthRatio = this.health(vaultId);
+        return healthRatio < 120e16; // Below 120% collateralization ratio
     }
 
     /**
@@ -230,10 +239,30 @@ contract VaultManager is ReentrancyGuard, AccessControl {
      * @return healthRatio The health ratio (0 = unhealthy, >MCR = healthy)
      */
     function health(uint256 vaultId) external view returns (uint256 healthRatio) {
-        // Simplified implementation - in production this would look up actual vault data
-        // For MVP, we return a mock health ratio for demonstration
-        // Production version would calculate: collateralValue / debtValue
-        return 150e16; // 150% health ratio (1.5 in WAD format)
+        // Convert vaultId to user address and collateral key (simplified mapping)
+        address vaultOwner = address(uint160(vaultId));
+        bytes32 collateralKey = bytes32(uint256(1)); // Simplified - would get from vault data
+        
+        CollateralConfig memory config = collaterals[collateralKey];
+        Position storage position = positions[vaultOwner][collateralKey];
+        
+        // If no debt, vault is healthy (avoid division by zero)
+        if (position.debt == 0) {
+            return type(uint256).max; // Infinite health ratio
+        }
+        
+        // If no collateral but has debt, vault is unhealthy
+        if (position.shares == 0) {
+            return 0;
+        }
+        
+        // Calculate actual health ratio: (collateralValue / debtValue) * 100
+        uint256 collateralValue = _getCollateralValue(position.shares, config.adapter, collateralKey);
+        
+        // Health ratio in WAD format (1e18 = 100%)
+        healthRatio = collateralValue.wadDiv(position.debt);
+        
+        return healthRatio;
     }
 
     /**
