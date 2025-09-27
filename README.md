@@ -58,7 +58,7 @@ npx hardhat run scripts/simulate.ts --network localhost
 - `GuardedOracle` - Price feeds with circuit breakers
 - `CollateralAdapters` - ERC4626 and rebasing token support
 
-**Flow:** Users deposit collateral → mint stablecoins → maintain health ratio > 150% → liquidation if undercollateralized
+For detailed system design and component interactions, see [Architecture Documentation](docs/Architecture.md).
 
 ## Security Notice
 
