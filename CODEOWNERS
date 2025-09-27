@@ -1,22 +1,5 @@
-# Global code owners
+# Personal project - all files owned by project creator
 * @spiros-pap
-
-# Core smart contracts require careful review
-/contracts/ @spiros-pap
-
-# Deployment scripts and configuration
-/deploy/ @spiros-pap
-/scripts/ @spiros-pap
-
-# Documentation and security
-/docs/ @spiros-pap
-SECURITY.md @spiros-pap
-CONTRIBUTING.md @spiros-pap
-
-# CI/CD and infrastructure  
-/.github/ @spiros-pap
-/hardhat.config.ts @spiros-pap
-/package.json @spiros-pap
 
 # Test files - maintainers can review
 /test/ @spiros-pap

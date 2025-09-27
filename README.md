@@ -1,46 +1,73 @@
 # Stablecoin Protocol
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Solidity](https://img.shields.io/badge/solidity-^0.8.24-blue)](https://docs.soliditylang.org/)
-[![Hardhat](https://img.shields.io/badge/hardhat-3.x-orange)](https://hardhat.org/)
-[![Documentation](https://img.shields.io/badge/docs-comprehensive-brightgreen)](https://github.com/spiros-pap/defi-technical-task/tree/main/docs)
-[![Security Policy](https://img.shields.io/badge/security-policy-blue)](https://github.com/spiros-pap/defi-technical-task/blob/main/SECURITY.md)
+**Personal educational project** for learning DeFi protocol development and smart contract patterns.
 
-<!-- CI badge intentionally omitted until pipeline is stable. For details, see .github/workflows/ci.yml. -->
+⚠️ **Educational Only - NOT FOR PRODUCTION USE**
 
-## CI/CD Setup Requirements
+## What This Is
 
-To enable automated deployments and ensure successful CI runs, configure the following GitHub repository secrets:
+A learning implementation of a stablecoin protocol that demonstrates:
 
-- `SEPOLIA_RPC_URL`: Sepolia network RPC endpoint (used for contract deployment)
-- `DEPLOYER_PRIVATE_KEY`: Private key for the deployer account (required for deployment; never commit this value)
+- Multi-collateral vault management (like MakerDAO)
+- MEV-resistant liquidation auctions (commit-reveal mechanism)  
+- Stability pool mechanics (like Liquity)
+- Oracle integration patterns
+- Emergency pause and safety mechanisms
+- Gas-optimized error handling
 
-These secrets are required for the deployment workflow defined in `.github/workflows/ci.yml`. For details on configuring secrets, refer to the [GitHub documentation](https://docs.github.com/en/actions/security-guides/encrypted-secrets).
+## Quick Start
 
-A production-ready decentralized stablecoin protocol featuring MEV-resistant liquidations, multi-collateral support, and advanced yield optimization. Built with Hardhat 3 and designed for institutional-grade DeFi applications.
+```bash
+# Install dependencies  
+npm install
 
-The protocol enables users to mint stablecoins by depositing yield-bearing collateral (LSTs, LRTs, ERC4626 vaults) while protecting against common MEV exploitation through innovative commit-reveal batch auctions.
+# Compile contracts
+npm run compile
 
-## 🎯 Key Innovation
-
-**MEV-Resistant Liquidations**: Our commit-reveal batch auction system prevents front-running and ensures fair price discovery, protecting both liquidators and vault holders from extractive MEV strategies.
-
-## 🏗️ Architecture Overview
-
-The protocol is a **yield-bearing stablecoin lending system** that supports ERC4626 vault adapters and rebasing tokens as collateral. It features MEV-resistant liquidations through commit-reveal batch auctions and modular components for extensibility.
-
-### Core Design Principles
-
-1. **Modular Architecture**: Separate concerns through adapter patterns
-2. **MEV Resistance**: Commit-reveal auctions prevent front-running
-3. **Yield Optimization**: Auto-compounding collateral improves health
-4. **Security First**: Multiple defense layers and circuit breakers
-5. **Gas Efficiency**: Optimized for reasonable transaction costs
-
-### System Architecture
-
+# Run basic tests
+npm test
 ```
-┌─────────────────────────────────────────────────────────────┐
+
+## Architecture
+
+- **VaultManager**: Create vaults, deposit collateral, borrow stablecoin
+- **LiquidationEngine**: Commit-reveal auction system for liquidations
+- **StabilityPool**: Backstop liquidity for liquidations  
+- **Oracles**: Price feeds with safety checks
+- **Adapters**: Support for different collateral types (ERC4626, rebasing tokens)
+
+## Requirements
+
+- Node.js v18, v20, or v22
+- npm or yarn
+- Basic Solidity knowledge
+
+## Development
+
+```bash
+# Clean build
+npm run clean && npm run compile
+
+# Run all tests
+npm test
+
+# Check for issues
+npm run lint
+```
+
+## Learning Goals
+
+This project helped me understand:
+- Collateralized debt positions (CDPs)
+- Liquidation mechanisms and MEV protection
+- Oracle integration and price feeds
+- Emergency controls and pause mechanisms  
+- Gas optimization techniques
+- Smart contract security patterns
+
+## License
+
+MIT - Feel free to learn from this code!
 │                     Protocol Overview                        │
 ├─────────────────┬─────────────────┬─────────────────────────┤
 │   Stablecoin    │   VaultManager  │    LiquidationEngine    │

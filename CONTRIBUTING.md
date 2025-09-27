@@ -1,34 +1,27 @@
-# Contributing to Stablecoin Protocol
+# Contributing
 
-Thank you for your interest in contributing to the Stablecoin Protocol! This document provides guidelines and information for contributors.
+This is a **personal educational project** for learning DeFi protocol development.
 
-## 🚀 Getting Started
+## Quick Setup
 
-### Prerequisites
+```bash
+npm install
+npm run compile
+npm test
+```
 
-- Node.js v18+ and npm
-- Git for version control
-- Basic understanding of Solidity and DeFi concepts
-- Familiarity with Hardhat development environment
+Feel free to:
+- Open issues for bugs or questions
+- Fork and experiment  
+- Suggest improvements
 
-### Development Setup
+## Development Notes
 
-1. **Fork the repository**
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/defi-technical-task.git
-   cd defi-technical-task
-   ```
+- Uses Hardhat for development
+- Run `npm run compile` to build contracts
+- Run `npm test` for basic testing
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
-
-3. **Set up environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+No formal contribution process - this is for learning! 🚀
 
 4. **Run tests to ensure everything works**
    ```bash
