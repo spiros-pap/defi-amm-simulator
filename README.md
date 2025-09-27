@@ -1,81 +1,82 @@
-# Stablecoin Protocol
+# Stablecoin Protocol# Stablecoin Protocol
 
-**Personal educational project** for learning DeFi protocol development and smart contract patterns.
 
-⚠️ **Educational Only - NOT FOR PRODUCTION USE**
 
-## What This Is
+Educational DeFi project implementing a multi-collateral stablecoin with MEV-resistant liquidations.Educational DeFi project implementing a multi-collateral stablecoin with MEV-resistant liquidations.
 
-A learning implementation of a stablecoin protocol that demonstrates:
 
-- Multi-collateral vault management (like MakerDAO)
-- MEV-resistant liquidation auctions (commit-reveal mechanism)  
-- Stability pool mechanics (like Liquity)
-- Oracle integration patterns
-- Emergency pause and safety mechanisms
-- Gas-optimized error handling
 
-## Quick Start
+⚠️ **Learning project - NOT for production**⚠️ **Learning project - NOT for production**
 
-```bash
-# Install dependencies  
-npm install
 
-# Compile contracts
-npm run compile
 
-# Run basic tests
-npm test
-```
+## What it demonstrates## What it demonstrates
 
-## Architecture
 
-- **VaultManager**: Create vaults, deposit collateral, borrow stablecoin
-- **LiquidationEngine**: Commit-reveal auction system for liquidations
-- **StabilityPool**: Backstop liquidity for liquidations  
-- **Oracles**: Price feeds with safety checks
-- **Adapters**: Support for different collateral types (ERC4626, rebasing tokens)
 
-## Requirements
+- Multi-collateral vault management  - Multi-collateral vault management  
 
-- Node.js v18, v20, or v22
-- npm or yarn
-- Basic Solidity knowledge
+- MEV-resistant liquidation auctions (commit-reveal)- MEV-resistant liquidation auctions (commit-reveal)
 
-## Development
+- Stability pool mechanics- Stability pool mechanics
 
-```bash
-# Clean build
-npm run clean && npm run compile
+- Oracle integration with safety checks- Oracle integration with safety checks
 
-# Run all tests
-npm test
+- Emergency pause mechanisms- Emergency pause mechanisms
 
-# Check for issues
-npm run lint
-```
 
-## Learning Goals
 
-This project helped me understand:
-- Collateralized debt positions (CDPs)
-- Liquidation mechanisms and MEV protection
-- Oracle integration and price feeds
-- Emergency controls and pause mechanisms  
-- Gas optimization techniques
-- Smart contract security patterns
+## Quick Start## Quick Start
 
-## License
 
-MIT - Feel free to learn from this code!
-│                     Protocol Overview                        │
-├─────────────────┬─────────────────┬─────────────────────────┤
-│   Stablecoin    │   VaultManager  │    LiquidationEngine    │
-│   (ERC20)       │   (Core Logic)  │   (Commit-Reveal)       │
-├─────────────────┼─────────────────┼─────────────────────────┤
-│  StabilityPool  │   PriceOracle   │    Collateral Adapters  │
-│  (Liquidations) │   (Price Feeds) │   (ERC4626 + Rebasing)  │
-└─────────────────┴─────────────────┴─────────────────────────┘
+
+```bash```bash
+
+npm installnpm install
+
+npm run compile  npm run compile  
+
+npm testnpm test
+
+``````
+
+
+
+## Architecture## Architecture
+
+
+
+See [docs/Architecture.md](docs/Architecture.md) for detailed diagrams and system design.See [docs/Architecture.md](docs/Architecture.md) for detailed diagrams and system design.
+
+
+
+**Core contracts:****Core contracts:**
+
+- `VaultManager` - CDP management- `VaultManager` - CDP management
+
+- `LiquidationEngine` - Commit-reveal auctions  - `LiquidationEngine` - Commit-reveal auctions  
+
+- `StabilityPool` - Liquidation backstop- `StabilityPool` - Liquidation backstop
+
+- `GuardedOracle` - Price feeds with guards- `GuardedOracle` - Price feeds with guards
+
+- Adapters for ERC4626 and rebasing tokens- Adapters for ERC4626 and rebasing tokens
+
+
+
+## Requirements## Requirements
+
+
+
+Node.js v18+ • Basic Solidity knowledgeNode.js v18+ • Basic Solidity knowledge
+
+
+
+## License## License
+
+
+
+MIT - Spiros PapagiannopoulosMIT - Spiros Papagiannopoulos
 ```
 
 ### Core Contracts
